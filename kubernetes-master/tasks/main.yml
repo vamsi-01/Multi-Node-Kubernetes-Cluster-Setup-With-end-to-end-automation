@@ -1,0 +1,99 @@
+---
+# tasks file for kubernetes-master
+
+- name: installing docker
+  package:
+    name: docker
+    state: present
+    
+- name: starting docker services
+  service:
+    name: "docker"
+    state: started
+    enabled: yes
+    
+- name: configuring yum for kubeadm
+  yum_repository:
+    name: "kubernetes"
+    description: "repo for kubernetes"
+    baseurl: https://packages.cloud.google.com/yum/repos/kubernetes-el7-\$basearch
+    enabled: yes
+    repo_gpgcheck: yes
+    gpgcheck: yes
+    gpgkey: 
+    -  "https://packages.cloud.google.com/yum/doc/yum-key.gpg"
+    -  "https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg"
+    
+- name: Installing kubeadm, kubectl and kubelet
+  yum:
+    name:
+      - kubelet
+      - kubeadm
+      - kubectl
+    state: present
+    disable_excludes: "kubernetes"
+
+- name: starting and enabling kubelet services
+  service:
+    name: "kubelet"
+    state: started
+    enabled: yes
+        
+- name: Pulling Images using kubeadm
+  shell: "kubeadm config  images pull"
+  changed_when: false
+     
+- name: Installing iproute-tc
+  package:
+     name: iproute-tc
+     
+- name: copy daemon file
+  copy:
+    src: daemon.json
+    dest: /etc/docker/daemon.json
+    
+- name: Restarting Docker
+  service:
+    name: docker
+    state:  restarted
+- name: updating k8s config file
+  copy:
+    dest: /etc/sysctl.d/k8s.conf
+    src: k8s.conf
+    
+- name: restarting sysctl
+  command: sysctl --system
+  
+- name: initialising kubeadm
+  shell: "kubeadm init --pod-network-cidr={{ cidr }} --ignore-preflight-errors=NumCPU --ignore-preflight-errors=Mem"
+  ignore_errors: yes
+  
+- name: Creating .kube directory
+  file:
+    name: "$HOME/.kube"
+    state: directory
+
+- name: Copy kube config
+  copy:
+    src: /etc/kubernetes/admin.conf
+    dest: $HOME/.kube/config
+    remote_src: yes
+
+- name: changing owner permission
+  shell: "chown $(id -u):$(id -g) $HOME/.kube/config"
+
+- name: Flannel Command
+  shell: "kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml"
+  ignore_errors: yes
+
+- name: Generating Token
+  shell: "kubeadm token  create  --print-join-command"
+  register: kubernetes_join_command
+  ignore_errors: yes
+
+- debug:
+    msg: "{{ kubernetes_join_command.stdout }}"
+
+- name: Copy join command to local file.
+  local_action: copy content="{{ kubernetes_join_command.stdout_lines[0] }}" dest="/tmp/kubernetes_join_command" mode=0777
+

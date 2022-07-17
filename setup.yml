@@ -1,0 +1,27 @@
+- name: aws_infrastructure_provision
+  hosts: localhost
+  tasks:
+  - name: terraform dependencies install
+    shell: terraform init
+  - name: aws infrastructure provisoning with terraform
+    shell: terraform apply --auto-approve
+  - name: Wait to Completely Provision Instances
+    pause:
+      minutes: 2
+  - name: Refresh Inventory
+    meta: refresh_inventory 
+
+- hosts: tag_Name_masternode 
+  roles:
+  - name: "configuring Master node"
+    role: kubernetes-master
+
+- hosts: tag_Name_slavenode
+  roles:
+  - name: "configuring Slave node"
+    role: kubernetes-slave
+
+- hosts: tag_Name_masternode 
+  roles:
+  - name: "Deploying wordpress"
+    role: wordpress-deploy
